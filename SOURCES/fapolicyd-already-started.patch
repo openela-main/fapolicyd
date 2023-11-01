@@ -1,0 +1,110 @@
+diff -up ./src/daemon/fapolicyd.c.already-started ./src/daemon/fapolicyd.c
+--- ./src/daemon/fapolicyd.c.already-started	2023-01-12 17:40:45.366909652 +0100
++++ ./src/daemon/fapolicyd.c	2023-01-12 17:46:22.458139519 +0100
+@@ -378,6 +378,58 @@ static void usage(void)
+ }
+ 
+ 
++int already_running(void)
++{
++	int pidfd = open(pidfile, O_RDONLY);
++	if (pidfd >= 0) {
++		char pid_buf[16];
++
++		if (fd_fgets(pid_buf, sizeof(pid_buf), pidfd)) {
++			int pid;
++			char exe_buf[80], my_path[80];
++
++			// Get our path
++			if (get_program_from_pid(getpid(),
++					sizeof(exe_buf), my_path) == NULL)
++				goto err_out; // shouldn't happen, but be safe
++
++			// convert pidfile to integer
++			errno = 0;
++			pid = strtoul(pid_buf, NULL, 10);
++			if (errno)
++				goto err_out; // shouldn't happen, but be safe
++
++			// verify it really is fapolicyd
++			if (get_program_from_pid(pid,
++					sizeof(exe_buf), exe_buf) == NULL)
++				goto good; //if pid doesn't exist, we're OK
++
++			// If the path doesn't have fapolicyd in it, we're OK
++			if (strstr(exe_buf, "fapolicyd") == NULL)
++				goto good;
++
++			if (strcmp(exe_buf, my_path) == 0)
++				goto err_out; // if the same, we need to exit
++
++			// one last sanity check in case path is unexpected
++			// for example: /sbin/fapolicyd & /home/test/fapolicyd
++			if (pid != getpid())
++				goto err_out;
++good:
++			close(pidfd);
++			unlink(pidfile);
++			return 0;
++		} else
++		    msg(LOG_ERR, "fapolicyd pid file found but unreadable");
++err_out: // At this point, we have a pid file, let's just assume it's alive
++	 // because if 2 are running, it deadlocks the machine
++		close(pidfd);
++		return 1;
++	}
++	return 0; // pid file doesn't exist, we're good to go
++}
++
++
+ int main(int argc, const char *argv[])
+ {
+ 	struct pollfd pfd[2];
+@@ -428,6 +480,11 @@ int main(int argc, const char *argv[])
+ 		}
+ 	}
+ 
++	if (already_running()) {
++		msg(LOG_ERR, "fapolicyd is already running");
++		exit(1);
++	}
++
+ 	// Set a couple signal handlers
+ 	sa.sa_flags = 0;
+ 	sigemptyset(&sa.sa_mask);
+@@ -446,9 +503,6 @@ int main(int argc, const char *argv[])
+ 	setrlimit(RLIMIT_FSIZE, &limit);
+ 	setrlimit(RLIMIT_NOFILE, &limit);
+ 
+-	// Set strict umask
+-	(void) umask( 0117 );
+-
+ 	// get more time slices because everything is waiting on us
+ 	rc = nice(-config.nice_val);
+ 	if (rc == -1)
+@@ -473,17 +527,20 @@ int main(int argc, const char *argv[])
+ 		exit(1);
+ 	}
+ 
+-	if (preconstruct_fifo(&config)) {
+-		msg(LOG_ERR, "Cannot contruct a pipe");
+-		exit(1);
+-	}
+-
+ 	// Setup filesystem to watch list
+ 	init_fs_list(config.watch_fs);
+ 
+ 	// Write the pid file for the init system
+ 	write_pid_file();
+ 
++	// Set strict umask
++	(void) umask( 0117 );
++
++	if (preconstruct_fifo(&config)) {
++		msg(LOG_ERR, "Cannot contruct a pipe");
++		exit(1);
++	}
++
+ 	// If we are not going to be root, then setup necessary capabilities
+ 	if (config.uid != 0) {
+ 		capng_clear(CAPNG_SELECT_BOTH);

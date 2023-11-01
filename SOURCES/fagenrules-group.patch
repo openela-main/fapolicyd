@@ -1,0 +1,13 @@
+diff -up ./init/fagenrules.fix ./init/fagenrules
+--- ./init/fagenrules.fix	2022-04-01 16:12:50.512164904 +0200
++++ ./init/fagenrules	2022-04-01 16:21:07.924712100 +0200
+@@ -117,7 +117,8 @@ fi
+ 
+ # We copy the file so that it gets the right selinux label
+ cp ${TmpRules} ${DestinationFile}
+-chmod 0640 ${DestinationFile}
++chmod 0644 ${DestinationFile}
++chgrp fapolicyd ${DestinationFile}
+ 
+ # Restore context on MLS system.
+ # /tmp is SystemLow & fapolicyd.rules is SystemHigh

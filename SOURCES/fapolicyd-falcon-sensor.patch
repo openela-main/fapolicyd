@@ -1,0 +1,74 @@
+diff -up ./src/library/event.c.event ./src/library/event.c
+--- ./src/library/event.c.event	2022-06-21 16:55:47.000000000 +0200
++++ ./src/library/event.c	2022-12-22 13:12:58.226816235 +0100
+@@ -132,7 +132,15 @@ int new_event(const struct fanotify_even
+ 		if ((s->info->state == STATE_COLLECTING) &&
+ 			(e->type & FAN_OPEN_PERM) && !rc) {
+ 			skip_path = 1;
++
+ 			s->info->state = STATE_REOPEN;
++
++			// special branch after ld_so exec
++			// next opens will go fall trough
++			if (s->info->path1 &&
++				(strcmp(s->info->path1, SYSTEM_LD_SO) == 0))
++				s->info->state = STATE_DEFAULT_REOPEN;
++
+ 		}
+ 
+ 		// If not same proc or we detect execution, evict
+@@ -149,7 +157,6 @@ int new_event(const struct fanotify_even
+ 				skip_path = 1;
+ 			}
+ 			evict = 0;
+-			skip_path = 1;
+ 			subject_reset(s, EXE);
+ 			subject_reset(s, COMM);
+ 			subject_reset(s, EXE_TYPE);
+@@ -165,6 +172,7 @@ int new_event(const struct fanotify_even
+ 			skip_path = 1;
+ 		}
+ 
++
+ 		// If we've seen the reopen and its an execute and process
+ 		// has an interpreter and we're the same process, don't evict
+ 		// and don't collect the path since reopen interp will. The
+@@ -173,14 +181,25 @@ int new_event(const struct fanotify_even
+ 		if ((s->info->state == STATE_REOPEN) && !skip_path &&
+ 				(e->type & FAN_OPEN_EXEC_PERM) &&
+ 				(s->info->elf_info & HAS_INTERP) && !rc) {
++			s->info->state = STATE_DEFAULT_REOPEN;
+ 			evict = 0;
+ 			skip_path = 1;
+ 		}
+ 
++
++		// this is what differs between STATE_REOPEN and
++		// STATE_DEFAULT_REOPEN
++		// in STATE_REOPEN path is always skipped
++		if ((s->info->state == STATE_REOPEN) && !skip_path &&
++				(e->type & FAN_OPEN_PERM) && !rc) {
++			skip_path = 1;
++		}
++
+ 		if (evict) {
+ 			lru_evict(subj_cache, key);
+ 			q_node = check_lru_cache(subj_cache, key);
+ 			s = (s_array *)q_node->item;
++
+ 		} else if (s->cnt == 0)
+ 			msg(LOG_DEBUG, "cached subject has cnt of 0");
+ 	}
+diff -up ./src/library/process.h.event ./src/library/process.h
+--- ./src/library/process.h.event	2022-06-21 16:55:47.000000000 +0200
++++ ./src/library/process.h	2022-12-22 13:10:23.260996771 +0100
+@@ -31,7 +31,8 @@
+ #include "gcc-attributes.h"
+ 
+ typedef enum {	STATE_COLLECTING=0,	// initial state - execute
+-		STATE_REOPEN,		// anticipating open perm next
++		STATE_REOPEN,		// anticipating open perm next, always skips the path
++		STATE_DEFAULT_REOPEN,  // reopen after dyn. linker exec, never skips the path
+ 		STATE_STATIC_REOPEN,	// static app aniticipating
+ 		STATE_PARTIAL,		// second path collected
+ 		STATE_STATIC_PARTIAL,	// second path collected
