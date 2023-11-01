@@ -1,0 +1,170 @@
+From 2d15ea13e2a3dca1bb159f2cf031ca437c0b9aa1 Mon Sep 17 00:00:00 2001
+From: Steve Grubb <sgrubb@redhat.com>
+Date: Tue, 27 Sep 2022 10:33:44 -0400
+Subject: [PATCH] Add support for using FAN_MARK_FILESYSTEM to see bind mounted
+ accesses
+
+---
+ ChangeLog                   |  1 +
+ configure.ac                |  1 +
+ doc/fapolicyd.conf.5        |  5 ++++-
+ init/fapolicyd.conf         |  1 +
+ src/daemon/notify.c         | 12 ++++++++++--
+ src/library/conf.h          |  3 ++-
+ src/library/daemon-config.c | 28 +++++++++++++++++++++++++++-
+ 7 files changed, 46 insertions(+), 5 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 4437685..a67c46b 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -56,6 +56,7 @@ AC_CHECK_DECLS([FAN_OPEN_EXEC_PERM], [perm=yes], [perm=no], [[#include <linux/fa
+ if test $perm = "no"; then
+ 	AC_MSG_ERROR([FAN_OPEN_EXEC_PERM is not defined in linux/fanotify.h. It is required for the kernel to support it])
+ fi
++AC_CHECK_DECLS([FAN_MARK_FILESYSTEM], [], [], [[#include <linux/fanotify.h>]])
+ 
+ withval=""
+ AC_ARG_WITH(rpm,
+diff --git a/doc/fapolicyd.conf.5 b/doc/fapolicyd.conf.5
+index 812cfa4..d8cb296 100644
+--- a/doc/fapolicyd.conf.5
++++ b/doc/fapolicyd.conf.5
+@@ -1,4 +1,4 @@
+-.TH FAPOLICYD.CONF: "6" "October 2021" "Red Hat" "System Administration Utilities"
++.TH FAPOLICYD.CONF: "6" "September 2022" "Red Hat" "System Administration Utilities"
+ .SH NAME
+ fapolicyd.conf \- fapolicyd configuration file
+ .SH DESCRIPTION
+@@ -87,6 +87,9 @@ Example:
+ .B rpm_sha256_only
+ The option set to 1 forces the daemon to work only with SHA256 hashes. This is useful on the systems where the integrity is set to SHA256 or IMA and some rpms were originally built with e.g. SHA1. The daemon will ingore these SHA1 entries therefore they can be added manually via CLI with correct SHA256 to a trust file later. If set to 0 the daemon stores SHA1 in trustdb as well. This is compatible with older behavior which works with the integrity set to NONE and SIZE. The NONE or SIZE integrity setting considers the files installed via rpm as trusted and it does not care about their hashes at all. On the other hand the integrity set to SHA256 or IMA will never consider a file with SHA1 in trustdb as trusted. The default value is 0.
+ 
++.TP
++.B allow_filesystem_mark
++When this option is set to 1, it allows fapolicyd to monitor file access events on the underlying file system when they are bind mounted or are overlayed (e.g. the overlayfs). Normally they block fapolicyd from seeing events on the underlying file systems. This may or may not be desirable. For example, you might start seeing containers accessing things outside of the container but there is no source of trust for the container. In that case you probably do not want to see access from the container. Or maybe you do not use containers but want to control anything run by systemd-run when dynamic users are allowed. In that case you probably want to turn it on. Not all kernel's supoport this option. Therefore the default value is 0.
+ 
+ .SH "SEE ALSO"
+ .BR fapolicyd (8),
+diff --git a/init/fapolicyd.conf b/init/fapolicyd.conf
+index 42e8798..8363b89 100644
+--- a/init/fapolicyd.conf
++++ b/init/fapolicyd.conf
+@@ -18,3 +18,4 @@ trust = rpmdb,file
+ integrity = none
+ syslog_format = rule,dec,perm,auid,pid,exe,:,path,ftype,trust
+ rpm_sha256_only = 0
++allow_filesystem_mark = 0
+diff --git a/src/daemon/notify.c b/src/daemon/notify.c
+index f550e99..c91abc4 100644
+--- a/src/daemon/notify.c
++++ b/src/daemon/notify.c
+@@ -123,8 +123,16 @@ int init_fanotify(const conf_t *conf, mlist *m)
+ 	path = mlist_first(m);
+ 	while (path) {
+ retry_mark:
+-		if (fanotify_mark(fd, FAN_MARK_ADD | FAN_MARK_MOUNT,
+-				mask, -1, path) == -1) {
++		unsigned int flags = FAN_MARK_ADD;
++#ifdef HAVE_DECL_FAN_MARK_FILESYSTEM
++		if (conf->allow_filesystem_mark)
++		    flags |= FAN_MARK_FILESYSTEM;
++#else
++		if (conf->allow_filesystem_mark)
++			msg(LOG_ERR,
++	    "allow_filesystem_mark is unsupported for this kernel - ignoring");
++#endif
++		if (fanotify_mark(fd, flags, mask, -1, path) == -1) {
+ 			/*
+ 			 * The FAN_OPEN_EXEC_PERM mask is not supported by
+ 			 * all kernel releases prior to 5.0. Retry setting
+diff --git a/src/library/conf.h b/src/library/conf.h
+index e774ff6..57c19a2 100644
+--- a/src/library/conf.h
++++ b/src/library/conf.h
+@@ -1,5 +1,5 @@
+ /* conf.h configuration structure
+- * Copyright 2018-20 Red Hat Inc.
++ * Copyright 2018-20,22 Red Hat Inc.
+  * All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+@@ -45,6 +45,7 @@ typedef struct conf
+ 	integrity_t integrity;
+ 	const char *syslog_format;
+ 	unsigned int rpm_sha256_only;
++	unsigned int allow_filesystem_mark;
+ } conf_t;
+ 
+ #endif
+diff --git a/src/library/daemon-config.c b/src/library/daemon-config.c
+index e803e0b..89b7f68 100644
+--- a/src/library/daemon-config.c
++++ b/src/library/daemon-config.c
+@@ -1,7 +1,7 @@
+ /*
+  * daemon-config.c - This is a config file parser
+  *
+- * Copyright 2018-21 Red Hat Inc.
++ * Copyright 2018-22 Red Hat Inc.
+  * All Rights Reserved.
+  *
+  * This library is free software; you can redistribute it and/or
+@@ -92,6 +92,8 @@ static int syslog_format_parser(const struct nv_pair *nv, int line,
+ 		conf_t *config);
+ static int rpm_sha256_only_parser(const struct nv_pair *nv, int line,
+ 		conf_t *config);
++static int fs_mark_parser(const struct nv_pair *nv, int line,
++		conf_t *config);
+ 
+ static const struct kw_pair keywords[] =
+ {
+@@ -110,6 +112,7 @@ static const struct kw_pair keywords[] =
+   {"integrity",		integrity_parser },
+   {"syslog_format",	syslog_format_parser },
+   {"rpm_sha256_only", rpm_sha256_only_parser},
++  {"allow_filesystem_mark",	fs_mark_parser },
+   { NULL,		NULL }
+ };
+ 
+@@ -138,6 +141,7 @@ static void clear_daemon_config(conf_t *config)
+ 	config->syslog_format =
+ 		strdup("rule,dec,perm,auid,pid,exe,:,path,ftype");
+ 	config->rpm_sha256_only = 0;
++	config->allow_filesystem_mark = 0;
+ }
+ 
+ int load_daemon_config(conf_t *config)
+@@ -590,6 +594,7 @@ static int syslog_format_parser(const struct nv_pair *nv, int line,
+ 	return 1;
+ }
+ 
++
+ static int rpm_sha256_only_parser(const struct nv_pair *nv, int line,
+                 conf_t *config)
+ {
+@@ -607,3 +612,24 @@ static int rpm_sha256_only_parser(const struct nv_pair *nv, int line,
+ 
+ 	return rc;
+ }
++
++
++static int fs_mark_parser(const struct nv_pair *nv, int line,
++		conf_t *config)
++{
++	int rc = 0;
++#ifndef HAVE_DECL_FAN_MARK_FILESYSTEM
++	msg(LOG_WARNING,
++	    "allow_filesystem_mark is unsupported on this kernel - ignoring");
++#else
++	rc = unsigned_int_parser(&(config->allow_filesystem_mark), nv->value, line);
++
++	if (rc == 0 && config->allow_filesystem_mark > 1) {
++		msg(LOG_WARNING,
++			"allow_filesystem_mark value reset to 0 - line %d", line);
++		config->allow_filesystem_mark = 0;
++	}
++#endif
++
++	return rc;
++}
