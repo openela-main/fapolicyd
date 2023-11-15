@@ -1,0 +1,93 @@
+diff -up ./src/daemon/fapolicyd.c.librpm-workaround ./src/daemon/fapolicyd.c
+--- ./src/daemon/fapolicyd.c.librpm-workaround	2023-07-10 11:19:19.507044648 +0200
++++ ./src/daemon/fapolicyd.c	2023-07-10 11:19:19.509044621 +0200
+@@ -572,7 +572,7 @@ int main(int argc, const char *argv[])
+ 		capng_clear(CAPNG_SELECT_BOTH);
+ 		capng_updatev(CAPNG_ADD, CAPNG_EFFECTIVE|CAPNG_PERMITTED,
+ 			CAP_DAC_OVERRIDE, CAP_SYS_ADMIN, CAP_SYS_PTRACE,
+-			CAP_SYS_NICE, CAP_SYS_RESOURCE, CAP_AUDIT_WRITE, -1);
++			CAP_SYS_NICE, CAP_SYS_RESOURCE, CAP_AUDIT_WRITE, CAP_CHOWN, -1);
+ 		if (capng_change_id(config.uid, config.gid,
+ 							CAPNG_DROP_SUPP_GRP)) {
+ 			msg(LOG_ERR, "Cannot change to uid %d", config.uid);
+diff -up ./src/library/rpm-backend.c.librpm-workaround ./src/library/rpm-backend.c
+--- ./src/library/rpm-backend.c.librpm-workaround	2023-06-15 16:45:14.000000000 +0200
++++ ./src/library/rpm-backend.c	2023-07-10 11:22:07.066794595 +0200
+@@ -32,7 +32,12 @@
+ #include <rpm/rpmdb.h>
+ #include <rpm/rpmpgp.h>
+ #include <fnmatch.h>
++#include <glob.h>
++#include <pwd.h>
++#include <grp.h>
++#include <fcntl.h>
+ 
++#include <unistd.h>
+ #include <uthash.h>
+ 
+ #include "message.h"
+@@ -59,6 +64,50 @@ backend rpm_backend =
+ static rpmts ts = NULL;
+ static rpmdbMatchIterator mi = NULL;
+ 
++static void fix_files(void)
++{
++	glob_t glob_result;
++	const char *pattern = "/var/lib/rpm/__*";
++
++	struct passwd * usr = getpwnam("fapolicyd");
++	if (usr == NULL) {
++		return;
++	}
++
++	struct group * grp = getgrnam("fapolicyd");
++	if (grp == NULL) {
++		return;
++	}
++
++	int return_value = glob(pattern, 0, NULL, &glob_result);
++	if (return_value != 0) {
++		return;
++	}
++
++	for (int i = 0; i < glob_result.gl_pathc; ++i) {
++
++		int fd = open(glob_result.gl_pathv[i], O_NOFOLLOW);
++
++		if (fd == -1)
++			continue;
++
++		struct stat file_stat;
++		if (fstat(fd, &file_stat) != 0) {
++			continue;
++		}
++
++		if (file_stat.st_uid == usr->pw_uid &&
++			file_stat.st_gid == grp->gr_gid) {
++
++			fchown(fd, 0, 0);
++		}
++
++		close(fd);
++	}
++
++	globfree(&glob_result);
++}
++
+ static int init_rpm(void)
+ {
+ 	return rpmReadConfigFiles ((const char *)NULL, (const char *)NULL);
+@@ -201,8 +250,13 @@ static int rpm_load_list(const conf_t *c
+ 		return rc;
+ 	}
+ 
++	int fixed = 0;
+ 	// Loop across the rpm database
+ 	while (get_next_package_rpm()) {
++		if (!fixed) {
++			fixed = 1;
++			fix_files();
++		}
+ 		// Loop across the packages
+ 		while (get_next_file_rpm()) {
+ 			// We do not want directories or symlinks in the

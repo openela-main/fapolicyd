@@ -1,0 +1,78 @@
+From 248219377a034d7da9238e7424c97558395700e3 Mon Sep 17 00:00:00 2001
+From: Radovan Sroka <rsroka@redhat.com>
+Date: Tue, 18 Jul 2023 17:05:11 +0200
+Subject: [PATCH] Fix multiple leaks
+
+Signed-off-by: Radovan Sroka <rsroka@redhat.com>
+---
+ src/library/filter.c |  3 +++
+ src/library/policy.c | 13 +++++++++++--
+ src/library/rules.c  |  3 ---
+ 3 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/src/library/filter.c b/src/library/filter.c
+index d5d8cca..eb378ca 100644
+--- a/src/library/filter.c
++++ b/src/library/filter.c
+@@ -472,9 +472,12 @@ int filter_load_file(void)
+ 			msg(LOG_ERR, "filter_load_file: paring error line: %ld, \"%s\"", line_number, line);
+ 			filter_destroy_obj(filter);
+ 			free(line);
++			line = NULL;
+ 			goto bad;
+ 		}
++	}
+ 
++	if (line) {
+ 		free(line);
+ 		line = NULL;
+ 	}
+diff --git a/src/library/policy.c b/src/library/policy.c
+index 7fe1210..31ff6e2 100644
+--- a/src/library/policy.c
++++ b/src/library/policy.c
+@@ -23,6 +23,7 @@
+  *   Radovan Sroka <rsroka@redhat.com>
+  */
+ 
++#include "attr-sets.h"
+ #include "config.h"
+ #include <stdbool.h>
+ #include <stdio.h>
+@@ -273,12 +274,20 @@ int load_rules(const conf_t *_config)
+ 		return 1;
+ 
+ 	FILE * f = open_file();
+-	if (f == NULL)
++	if (f == NULL) {
++		destroy_attr_sets();
+ 		return 1;
++	}
+ 
+ 	int res = _load_rules(_config, f);
+ 	fclose(f);
+-	return res;
++
++	if (res) {
++		destroy_attr_sets();
++		return 1;
++	}
++
++	return 0;
+ }
+ 
+ void destroy_rules(void)
+diff --git a/src/library/rules.c b/src/library/rules.c
+index 5ffa40e..4a8b098 100644
+--- a/src/library/rules.c
++++ b/src/library/rules.c
+@@ -65,9 +65,6 @@ int rules_create(llist *l)
+ 	l->cur = NULL;
+ 	l->cnt = 0;
+ 
+-	if (init_attr_sets())
+-		return 1;
+-
+ 	return  0;
+ }
+ 
