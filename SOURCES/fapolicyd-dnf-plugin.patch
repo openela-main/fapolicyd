@@ -1,12 +1,12 @@
-diff --color -ru a/dnf/fapolicyd-dnf-plugin.py b/dnf/fapolicyd-dnf-plugin.py
---- a/dnf/fapolicyd-dnf-plugin.py	2021-11-12 20:21:54.000000000 +0100
-+++ b/dnf/fapolicyd-dnf-plugin.py	2021-11-18 16:29:03.919237116 +0100
-@@ -8,29 +8,9 @@
+diff -up ./dnf/fapolicyd-dnf-plugin.py.fix ./dnf/fapolicyd-dnf-plugin.py
+--- ./dnf/fapolicyd-dnf-plugin.py.fix	2023-06-20 13:21:21.098192421 +0200
++++ ./dnf/fapolicyd-dnf-plugin.py	2023-06-20 13:21:46.287412300 +0200
+@@ -8,29 +8,10 @@ import sys
  class Fapolicyd(dnf.Plugin):
  
      name = "fapolicyd"
--    pipe = "/var/run/fapolicyd/fapolicyd.fifo"
--    file = None
+-    pipe = "/run/fapolicyd/fapolicyd.fifo"
+     file = None
  
      def __init__(self, base, cli):
          pass
@@ -29,7 +29,6 @@ diff --color -ru a/dnf/fapolicyd-dnf-plugin.py b/dnf/fapolicyd-dnf-plugin.py
 -            sys.stderr.write("fapolicy-plugin does not have write permission: " + self.pipe + "\n")
 -            return
 -
--        self.file.write("1")
+-        self.file.write("1\n")
 -        self.file.close()
 +        pass
-Only in b/dnf: fapolicyd-dnf-plugin.py.plugin
