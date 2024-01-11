@@ -1,0 +1,38 @@
+From ca225c8e83b37e5f29703d7352af0b937b2e933c Mon Sep 17 00:00:00 2001
+From: Steve Grubb <sgrubb@redhat.com>
+Date: Tue, 27 Sep 2022 19:41:24 -0400
+Subject: [PATCH] Correct the optional inclusion of code based on
+ HAVE_DECL_FAN_MARK_FILESYSTEM
+
+---
+ ChangeLog                   | 1 +
+ src/daemon/notify.c         | 2 +-
+ src/library/daemon-config.c | 2 +-
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/daemon/notify.c b/src/daemon/notify.c
+index c91abc4..f36b644 100644
+--- a/src/daemon/notify.c
++++ b/src/daemon/notify.c
+@@ -124,7 +124,7 @@ int init_fanotify(const conf_t *conf, mlist *m)
+ 	while (path) {
+ retry_mark:
+ 		unsigned int flags = FAN_MARK_ADD;
+-#ifdef HAVE_DECL_FAN_MARK_FILESYSTEM
++#if HAVE_DECL_FAN_MARK_FILESYSTEM != 0
+ 		if (conf->allow_filesystem_mark)
+ 		    flags |= FAN_MARK_FILESYSTEM;
+ #else
+diff --git a/src/library/daemon-config.c b/src/library/daemon-config.c
+index 89b7f68..778b89a 100644
+--- a/src/library/daemon-config.c
++++ b/src/library/daemon-config.c
+@@ -618,7 +618,7 @@ static int fs_mark_parser(const struct nv_pair *nv, int line,
+ 		conf_t *config)
+ {
+ 	int rc = 0;
+-#ifndef HAVE_DECL_FAN_MARK_FILESYSTEM
++#if HAVE_DECL_FAN_MARK_FILESYSTEM == 0
+ 	msg(LOG_WARNING,
+ 	    "allow_filesystem_mark is unsupported on this kernel - ignoring");
+ #else

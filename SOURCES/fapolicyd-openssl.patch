@@ -1,0 +1,195 @@
+diff -up ./BUILD.md.openssl ./BUILD.md
+--- ./BUILD.md.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./BUILD.md	2022-08-02 14:10:48.092466542 +0200
+@@ -16,7 +16,8 @@ BUILD-TIME DEPENDENCIES (fedora and RHEL
+ * libudev-devel
+ * kernel-headers
+ * systemd-devel
+-* libgcrypt-devel
++* libgcrypt-devel ( <= fapolicyd-1.1.3)
++* openssl         ( >= fapolicyd-1.1.4)
+ * rpm-devel (optional)
+ * file
+ * file-devel
+diff -U0 ./ChangeLog.openssl ./ChangeLog
+diff -up ./configure.ac.openssl ./configure.ac
+--- ./configure.ac.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./configure.ac	2022-08-02 14:10:48.092466542 +0200
+@@ -87,7 +87,7 @@ AC_CHECK_HEADER(uthash.h, , [AC_MSG_ERRO
+ echo .
+ echo Checking for required libraries
+ AC_CHECK_LIB(udev, udev_device_get_devnode, , [AC_MSG_ERROR([libudev not found])], -ludev)
+-AC_CHECK_LIB(gcrypt, gcry_md_open, , [AC_MSG_ERROR([libgcrypt not found])], -lgcrypt)
++AC_CHECK_LIB(crypto, SHA256, , [AC_MSG_ERROR([openssl libcrypto not found])], -lcrypto)
+ AC_CHECK_LIB(magic, magic_descriptor, , [AC_MSG_ERROR([libmagic not found])], -lmagic)
+ AC_CHECK_LIB(cap-ng, capng_change_id, , [AC_MSG_ERROR([libcap-ng not found])], -lcap-ng)
+ AC_CHECK_LIB(seccomp, seccomp_rule_add, , [AC_MSG_ERROR([libseccomp not found])], -lseccomp)
+diff -up ./fapolicyd.spec.openssl ./fapolicyd.spec
+--- ./fapolicyd.spec.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./fapolicyd.spec	2022-08-02 14:10:48.092466542 +0200
+@@ -8,7 +8,7 @@ Source0: https://people.redhat.com/sgrub
+ BuildRequires: gcc
+ BuildRequires: kernel-headers
+ BuildRequires: autoconf automake make gcc libtool
+-BuildRequires: systemd-devel libgcrypt-devel rpm-devel file-devel file
++BuildRequires: systemd-devel openssl-devel rpm-devel file-devel file
+ BuildRequires: libcap-ng-devel libseccomp-devel lmdb-devel
+ BuildRequires: python3-devel
+ BuildRequires: uthash-devel
+diff -up ./src/cli/fapolicyd-cli.c.openssl ./src/cli/fapolicyd-cli.c
+--- ./src/cli/fapolicyd-cli.c.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./src/cli/fapolicyd-cli.c	2022-08-02 14:10:48.093466520 +0200
+@@ -39,7 +39,6 @@
+ #include <stdatomic.h>
+ #include <lmdb.h>
+ #include <limits.h>
+-#include <gcrypt.h>
+ #include "policy.h"
+ #include "database.h"
+ #include "file-cli.h"
+@@ -670,11 +669,6 @@ static int check_trustdb(void)
+ 	if (rc)
+ 		return 1;
+ 
+-	// Initialize libgcrypt
+-	gcry_check_version(NULL);
+-	gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
+-	gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+-
+ 	do {
+ 		unsigned int tsource; // unused
+ 		off_t size;
+diff -up ./src/library/database.c.openssl ./src/library/database.c
+--- ./src/library/database.c.openssl	2022-08-02 14:10:48.090466587 +0200
++++ ./src/library/database.c	2022-08-02 14:13:11.995236110 +0200
+@@ -35,7 +35,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <ctype.h>
+-#include <gcrypt.h>
++#include <openssl/sha.h>
+ #include <signal.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+@@ -244,26 +244,18 @@ static void abort_transaction(MDB_txn *t
+ static char *path_to_hash(const char *path, const size_t path_len) MALLOCLIKE;
+ static char *path_to_hash(const char *path, const size_t path_len)
+ {
+-	gcry_md_hd_t h;
+-	unsigned int len;
+-	unsigned char *hptr;
++	unsigned char hptr[80];
+ 	char *digest;
+ 
+-	if (gcry_md_open(&h, GCRY_MD_SHA512, GCRY_MD_FLAG_SECURE))
++	if (path_len == 0)
+ 		return NULL;
+ 
+-	gcry_md_write(h, path, path_len);
+-	hptr = gcry_md_read(h, GCRY_MD_SHA512);
+-
+-	len = gcry_md_get_algo_dlen(GCRY_MD_SHA512) * sizeof(char);
+-	digest = malloc((2 * len) + 1);
+-	if (digest == NULL) {
+-		gcry_md_close(h);
++	SHA512((unsigned char *)path, path_len, (unsigned char *)&hptr);
++	digest = malloc((SHA512_LEN * 2) + 1);
++	if (digest == NULL)
+ 		return digest;
+-	}
+ 
+-	bytes2hex(digest, hptr, len);
+-	gcry_md_close(h);
++	bytes2hex(digest, hptr, SHA512_LEN);
+ 
+ 	return digest;
+ }
+@@ -296,7 +288,7 @@ static int write_db(const char *idx, con
+ 		if (hash == NULL)
+ 			return 5;
+ 		key.mv_data = (void *)hash;
+-		key.mv_size = gcry_md_get_algo_dlen(GCRY_MD_SHA512) * 2 + 1;
++		key.mv_size = (SHA512_LEN * 2) + 1;
+ 	} else {
+ 		key.mv_data = (void *)idx;
+ 		key.mv_size = len;
+@@ -416,7 +408,7 @@ static char *lt_read_db(const char *inde
+ 		if (hash == NULL)
+ 			return NULL;
+ 		key.mv_data = (void *)hash;
+-		key.mv_size = gcry_md_get_algo_dlen(GCRY_MD_SHA512) * 2 + 1;
++		key.mv_size = (SHA512_LEN * 2) + 1;
+ 	} else {
+ 		key.mv_data = (void *)index;
+ 		key.mv_size = len;
+diff -up ./src/library/file.c.openssl ./src/library/file.c
+--- ./src/library/file.c.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./src/library/file.c	2022-08-02 14:10:48.094466497 +0200
+@@ -31,7 +31,7 @@
+ #include <sys/stat.h>
+ #include <string.h>
+ #include <stdlib.h>
+-#include <gcrypt.h>
++#include <openssl/sha.h>
+ #include <magic.h>
+ #include <libudev.h>
+ #include <elf.h>
+@@ -51,7 +51,6 @@ static struct udev *udev;
+ magic_t magic_cookie;
+ struct cache { dev_t device; const char *devname; };
+ static struct cache c = { 0, NULL };
+-static size_t hash_size = 32;	// init so cli doesn't need to call file_init
+ 
+ // readelf -l path-to-app | grep 'Requesting' | cut -d':' -f2 | tr -d ' ]';
+ static const char *interpreters[] = {
+@@ -96,12 +95,6 @@ void file_init(void)
+ 		msg(LOG_ERR, "Unable to load magic database");
+ 		exit(1);
+ 	}
+-
+-	// Initialize libgcrypt
+-	gcry_check_version(NULL);
+-	gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
+-	gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+-	hash_size = gcry_md_get_algo_dlen(GCRY_MD_SHA256) * sizeof(char);
+ }
+ 
+ 
+@@ -445,12 +438,12 @@ char *get_hash_from_fd2(int fd, size_t s
+ 	if (mapped != MAP_FAILED) {
+ 		unsigned char hptr[40];
+ 
+-		gcry_md_hash_buffer(GCRY_MD_SHA256, &hptr, mapped, size);
++		SHA256(mapped, size, (unsigned char *)&hptr);
+ 		munmap(mapped, size);
+-		digest = malloc(65);
++		digest = malloc((SHA256_LEN * 2) + 1);
+ 
+ 		// Convert to ASCII string
+-		bytes2hex(digest, hptr, hash_size);
++		bytes2hex(digest, hptr, SHA256_LEN);
+ 	}
+ 	return digest;
+ }
+@@ -476,7 +469,7 @@ int get_ima_hash(int fd, char *sha)
+ 	}
+ 
+ 	// Looks like it what we want...
+-	bytes2hex(sha, &tmp[2], 32);
++	bytes2hex(sha, &tmp[2], SHA256_LEN);
+ 	return 1;
+ }
+ 
+diff -up ./src/library/file.h.openssl ./src/library/file.h
+--- ./src/library/file.h.openssl	2022-06-21 16:55:47.000000000 +0200
++++ ./src/library/file.h	2022-08-02 14:10:48.094466497 +0200
+@@ -40,6 +40,9 @@ struct file_info
+ 	struct timespec time;
+ };
+ 
++#define SHA256_LEN	32
++#define SHA512_LEN	64
++
+ void file_init(void);
+ void file_close(void);
+ struct file_info *stat_file_entry(int fd) MALLOCLIKE;

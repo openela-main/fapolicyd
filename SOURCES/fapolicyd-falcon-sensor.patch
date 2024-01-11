@@ -1,0 +1,79 @@
+From 2b13715219bbb6a84a73e007cea84f0d5d1d39ab Mon Sep 17 00:00:00 2001
+From: Radovan Sroka <rsroka@redhat.com>
+Date: Tue, 6 Dec 2022 15:09:44 +0100
+Subject: [PATCH] Extend new_event state machine
+
+- allow other opens before dynamic linker execution
+- split original STATE_REOPEN to the new STATE_REOPEN and STATE_DEFAULT_REOPEN
+
+- STATE_REOPEN now behaves as loop state for new opens (from the same subject),
+  uses skip_path
+- STATE_DEFAULT_REOPEN is needed when dynamic linker is directly executed
+  in such scenario we need to be sure that non of the following opens will
+  skip the path
+
+Signed-off-by: Radovan Sroka <rsroka@redhat.com>
+---
+ src/library/event.c   | 16 ++++++++++++++++
+ src/library/process.h |  3 ++-
+ 2 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/src/library/event.c b/src/library/event.c
+index 4d79eb98..649cb9d6 100644
+--- a/src/library/event.c
++++ b/src/library/event.c
+@@ -133,6 +133,12 @@ int new_event(const struct fanotify_event_metadata *m, event_t *e)
+ 			(e->type & FAN_OPEN_PERM) && !rc) {
+ 			skip_path = 1;
+ 			s->info->state = STATE_REOPEN;
++
++			// special branch after ld_so exec
++			// next opens will go fall trough
++			if (s->info->path1 &&
++				(strcmp(s->info->path1, SYSTEM_LD_SO) == 0))
++				s->info->state = STATE_DEFAULT_REOPEN;
+ 		}
+ 
+ 		// If not same proc or we detect execution, evict
+@@ -164,6 +170,7 @@ int new_event(const struct fanotify_event_metadata *m, event_t *e)
+ 			skip_path = 1;
+ 		}
+ 
++
+ 		// If we've seen the reopen and its an execute and process
+ 		// has an interpreter and we're the same process, don't evict
+ 		// and don't collect the path since reopen interp will. The
+@@ -172,10 +179,19 @@ int new_event(const struct fanotify_event_metadata *m, event_t *e)
+ 		if ((s->info->state == STATE_REOPEN) && !skip_path &&
+ 				(e->type & FAN_OPEN_EXEC_PERM) &&
+ 				(s->info->elf_info & HAS_INTERP) && !rc) {
++			s->info->state = STATE_DEFAULT_REOPEN;
+ 			evict = 0;
+ 			skip_path = 1;
+ 		}
+ 
++		// this is how STATE_REOPEN and
++		// STATE_DEFAULT_REOPEN differs
++		// in STATE_REOPEN path is always skipped
++		if ((s->info->state == STATE_REOPEN) && !skip_path &&
++				(e->type & FAN_OPEN_PERM) && !rc) {
++			skip_path = 1;
++		}
++
+ 		if (evict) {
+ 			lru_evict(subj_cache, key);
+ 			q_node = check_lru_cache(subj_cache, key);
+diff --git a/src/library/process.h b/src/library/process.h
+index daa9d0d0..a741d1ac 100644
+--- a/src/library/process.h
++++ b/src/library/process.h
+@@ -31,7 +31,8 @@
+ #include "gcc-attributes.h"
+ 
+ typedef enum {	STATE_COLLECTING=0,	// initial state - execute
+-		STATE_REOPEN,		// anticipating open perm next
++		STATE_REOPEN,		// anticipating open perm next, always skips the path
++		STATE_DEFAULT_REOPEN,  // reopen after dyn. linker exec, never skips the path
+ 		STATE_STATIC_REOPEN,	// static app aniticipating
+ 		STATE_PARTIAL,		// second path collected
+ 		STATE_STATIC_PARTIAL,	// second path collected
