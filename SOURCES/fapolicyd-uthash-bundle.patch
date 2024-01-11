@@ -1,7 +1,7 @@
-diff --color -ru a/configure.ac b/configure.ac
---- a/configure.ac	2021-11-12 20:21:54.000000000 +0100
-+++ b/configure.ac	2021-12-14 13:47:11.890649552 +0100
-@@ -67,10 +67,6 @@
+diff -up ./configure.ac.uthash ./configure.ac
+--- ./configure.ac.uthash	2023-06-15 16:45:13.000000000 +0200
++++ ./configure.ac	2023-06-16 14:32:53.112363230 +0200
+@@ -96,10 +96,6 @@ AC_CHECK_HEADER(sys/fanotify.h, , [AC_MS
  ["Couldn't find sys/fanotify.h...your kernel might not be new enough"] )])
  AC_CHECK_FUNCS(fexecve, [], [])
  
@@ -12,11 +12,11 @@ diff --color -ru a/configure.ac b/configure.ac
  echo .
  echo Checking for required libraries
  AC_CHECK_LIB(udev, udev_device_get_devnode, , [AC_MSG_ERROR([libudev not found])], -ludev)
-diff --color -ru a/src/library/rpm-backend.c b/src/library/rpm-backend.c
---- a/src/library/rpm-backend.c	2021-11-12 20:21:54.000000000 +0100
-+++ b/src/library/rpm-backend.c	2021-12-14 13:47:26.833926203 +0100
-@@ -32,7 +32,7 @@
- #include <rpm/rpmdb.h>
+diff -up ./src/library/rpm-backend.c.uthash ./src/library/rpm-backend.c
+--- ./src/library/rpm-backend.c.uthash	2023-06-16 14:32:53.112363230 +0200
++++ ./src/library/rpm-backend.c	2023-06-16 14:35:20.467338604 +0200
+@@ -33,7 +33,7 @@
+ #include <rpm/rpmpgp.h>
  #include <fnmatch.h>
  
 -#include <uthash.h>
@@ -24,10 +24,10 @@ diff --color -ru a/src/library/rpm-backend.c b/src/library/rpm-backend.c
  
  #include "message.h"
  #include "gcc-attributes.h"
-diff --color -ru a/src/Makefile.am b/src/Makefile.am
---- a/src/Makefile.am	2021-11-12 20:21:54.000000000 +0100
-+++ b/src/Makefile.am	2021-12-14 13:48:03.218599808 +0100
-@@ -5,6 +5,9 @@
+diff -up ./src/Makefile.am.uthash ./src/Makefile.am
+--- ./src/Makefile.am.uthash	2023-06-15 16:45:13.000000000 +0200
++++ ./src/Makefile.am	2023-06-16 14:32:53.112363230 +0200
+@@ -5,6 +5,9 @@ AM_CPPFLAGS = \
  	-I${top_srcdir} \
  	-I${top_srcdir}/src/library
  

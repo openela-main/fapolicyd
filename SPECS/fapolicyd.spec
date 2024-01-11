@@ -1,11 +1,11 @@
 %global selinuxtype targeted
 %global moduletype contrib
-%define semodule_version 0.4
+%define semodule_version 0.6
 
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
-Version: 1.1.3
-Release: 104%{?dist}
+Version: 1.3.2
+Release: 100%{?dist}
 License: GPLv3+
 URL: http://people.redhat.com/sgrubb/fapolicyd
 Source0: https://people.redhat.com/sgrubb/fapolicyd/%{name}-%{version}.tar.gz
@@ -31,26 +31,9 @@ Requires(preun): systemd-units
 Requires(postun): systemd-units
 
 Patch1: fapolicyd-uthash-bundle.patch
-Patch2: fapolicyd-selinux-1.patch
-Patch3: fagenrules-group.patch
-Patch4: fapolicyd-fgets-update-thread.patch
-Patch5: fapolicyd-openssl.patch
-Patch6: fapolicyd-user-group-doc.patch
-Patch7: fapolicyd-cli-segfault.patch
-Patch8: fapolicyd-sighup.patch
-Patch9: fapolicyd-readme.patch
-
-Patch10: fapolicyd-static-app.patch
-Patch11: fapolicyd-markfs-1.patch
-Patch12: fapolicyd-markfs-2.patch
-Patch13: fapolicyd-markfs-3.patch
-Patch14: fapolicyd-markfs-4.patch
-
-Patch15: fapolicyd-selinux-2.patch
-
-Patch16: fapolicyd-falcon-sensor.patch
-Patch17: fapolicyd-exclude-list.patch
-Patch18: fapolicyd-already-started.patch
+Patch2: selinux.patch
+Patch3: fapolicyd-leaks.patch
+Patch4: fapolicyd-selinux-links.patch
 
 %description
 Fapolicyd (File Access Policy Daemon) implements application whitelisting
@@ -80,29 +63,12 @@ The %{name}-selinux package contains selinux policy for the %{name} daemon.
 %if 0%{?rhel} != 0
 # uthash
 %setup -q -D -T -a 2
-%patch1 -p1 -b .uthash
+%patch -P 1 -p1 -b .uthash
 %endif
 
-%patch2 -p1 -b .selinux1
-%patch3 -p1 -b .group
-%patch4 -p1 -b .update-thread
-%patch5 -p1 -b .openssl
-%patch6 -p1 -b .user-group-doc
-%patch7 -p1 -b .cli-segfault
-%patch8 -p1 -b .sighup
-%patch9 -p1 -b .readme
-
-%patch10 -p1 -b .static
-%patch11 -p1 -b .markfs1
-%patch12 -p1 -b .markfs2
-%patch13 -p1 -b .markfs3
-%patch14 -p1 -b .markfs4
-
-%patch15 -p1 -b .selinux2
-
-%patch16 -p1 -b .event
-%patch17 -p1 -b .exclude
-%patch18 -p1 -b .already-started
+%patch -P 2 -p1 -b .selinux
+%patch -P 3 -p1 -b .leaks
+%patch -P 4 -p1 -b .links
 
 # generate rules for python
 sed -i "s|%python2_path%|`readlink -f %{__python2}`|g" rules.d/*.rules
@@ -117,6 +83,7 @@ interpret=`readelf -e /usr/bin/bash \
 sed -i "s|%ld_so_path%|`realpath $interpret`|g" rules.d/*.rules
 
 %build
+cp INSTALL INSTALL.tmp
 ./autogen.sh
 %configure \
     --with-audit \
@@ -248,10 +215,11 @@ fi
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/trust.d
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/rules.d
+%attr(644,root,root) %{_sysconfdir}/bash_completion.d/*
 %ghost %verify(not md5 size mtime) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/rules.d/*
 %ghost %verify(not md5 size mtime) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/%{name}.rules
 %config(noreplace) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/%{name}.conf
-%config(noreplace) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/rpm-filter.conf
+%config(noreplace) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/%{name}-filter.conf
 %config(noreplace) %attr(644,root,%{name}) %{_sysconfdir}/%{name}/%{name}.trust
 %ghost %attr(644,root,%{name}) %{_sysconfdir}/%{name}/compiled.rules
 %attr(644,root,root) %{_unitdir}/%{name}.service
@@ -261,7 +229,6 @@ fi
 %attr(755,root,root) %{_sbindir}/fagenrules
 %attr(644,root,root) %{_mandir}/man8/*
 %attr(644,root,root) %{_mandir}/man5/*
-%attr(644,root,root) %{_mandir}/man1/*
 %ghost %attr(440,%{name},%{name}) %verify(not md5 size mtime) %{_localstatedir}/log/%{name}-access.log
 %attr(770,root,%{name}) %dir %{_localstatedir}/lib/%{name}
 %attr(770,root,%{name}) %dir /run/%{name}
@@ -288,6 +255,27 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Wed Jul 19 2023 Radovan Sroka <rsroka@redhat.com> - 1.3.2-100
+RHEL 9.3.0 ERRATUM
+- Rebase fapolicyd to the latest stable version
+Resolves: RHEL-430
+- fapolicyd can leak FDs and never answer request, causing target process to hang forever
+Resolves: RHEL-621
+- RFE: send rule number to fanotify so it gets audited
+Resolves: RHEL-624
+- fapolicyd needs to make sure the FD limit is never reached
+Resolves: RHEL-623
+- fapolicyd still allows execution of a program after "untrusting" it
+Resolves: RHEL-622
+- Default q_size doesn't match manpage's one
+Resolves: RHEL-627
+- fapolicyd-cli --update then mount/umount twice causes fapolicyd daemon to block (state 'D')
+Resolves: RHEL-817
+- Fix broken backwards compatibility backend numbers
+Resolves: RHEL-730
+- SELinux prevents the fapolicyd from reading symlink (cert_t)
+Resolves: RHEL-816
+
 * Mon Jan 30 2023 Radovan Sroka <rsroka@redhat.com> - 1.1.3-104
 RHEL 9.2.0 ERRATUM
 - statically linked app can execute untrusted app
