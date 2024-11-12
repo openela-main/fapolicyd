@@ -1,10 +1,10 @@
 %global selinuxtype targeted
 %global moduletype contrib
-%define semodule_version 0.6
+%define semodule_version 0.7
 
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
-Version: 1.3.2
+Version: 1.3.3
 Release: 100%{?dist}
 License: GPLv3+
 URL: http://people.redhat.com/sgrubb/fapolicyd
@@ -32,8 +32,7 @@ Requires(postun): systemd-units
 
 Patch1: fapolicyd-uthash-bundle.patch
 Patch2: selinux.patch
-Patch3: fapolicyd-leaks.patch
-Patch4: fapolicyd-selinux-links.patch
+Patch3: var-run-selinux.patch
 
 %description
 Fapolicyd (File Access Policy Daemon) implements application whitelisting
@@ -67,8 +66,8 @@ The %{name}-selinux package contains selinux policy for the %{name} daemon.
 %endif
 
 %patch -P 2 -p1 -b .selinux
-%patch -P 3 -p1 -b .leaks
-%patch -P 4 -p1 -b .links
+%patch -P 3 -p1 -R -b .var-run-selinux
+
 
 # generate rules for python
 sed -i "s|%python2_path%|`readlink -f %{__python2}`|g" rules.d/*.rules
@@ -255,6 +254,11 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Wed Jul 19 2023 Radovan Sroka <rsroka@redhat.com> - 1.3.3-100
+RHEL 9.5.0 ERRATUM
+- rebase to fapolicyd-1.3.3 and fapolicyd-selinux-0.7
+Resolves: RHEL-36285
+
 * Wed Jul 19 2023 Radovan Sroka <rsroka@redhat.com> - 1.3.2-100
 RHEL 9.3.0 ERRATUM
 - Rebase fapolicyd to the latest stable version
