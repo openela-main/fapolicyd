@@ -5,13 +5,14 @@
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
 Version: 1.3.3
-Release: 100%{?dist}
+Release: 106%{?dist}.1
 License: GPLv3+
 URL: http://people.redhat.com/sgrubb/fapolicyd
 Source0: https://people.redhat.com/sgrubb/fapolicyd/%{name}-%{version}.tar.gz
 Source1: https://github.com/linux-application-whitelisting/%{name}-selinux/releases/download/v%{semodule_version}/%{name}-selinux-%{semodule_version}.tar.gz
 # we bundle uthash for rhel9
 Source2: https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz#/uthash-2.3.0.tar.gz
+Source3: fapolicyd.sysusers
 BuildRequires: gcc
 BuildRequires: kernel-headers
 BuildRequires: autoconf automake make gcc libtool
@@ -33,6 +34,16 @@ Requires(postun): systemd-units
 Patch1: fapolicyd-uthash-bundle.patch
 Patch2: selinux.patch
 Patch3: var-run-selinux.patch
+Patch4: fapolicyd-rpm-v.patch
+Patch5: fapolicyd-nss-lookup.patch
+Patch6: fapolicyd-normal-pattern.patch
+Patch7: fapolicyd-rpm-loader.patch
+Patch8: fapolicyd-infinite-loop.patch
+Patch9: fapolicyd-data-format.patch
+Patch10: var-run-t-dir-selinux.patch
+Patch11: fapolicyd-skip-nonregular.patch
+Patch12: fapolicyd-socket-segfault.patch
+Patch13: Add-var-lib-fapolicyd-to-tmpfiles.patch
 
 %description
 Fapolicyd (File Access Policy Daemon) implements application whitelisting
@@ -67,7 +78,16 @@ The %{name}-selinux package contains selinux policy for the %{name} daemon.
 
 %patch -P 2 -p1 -b .selinux
 %patch -P 3 -p1 -R -b .var-run-selinux
-
+%patch -P 4 -p1 -b .rpm-v
+%patch -P 5 -p1 -b .nss-lookup
+%patch -P 6 -p1 -b .normal-pattern
+%patch -P 7 -p1 -b .rpm-loader
+%patch -P 8 -p1 -b .infinite-loop
+%patch -P 9 -p1 -b .data-format
+%patch -P 10 -p1 -b .var-run-dir
+%patch -P 11 -p1 -b .skip-nonregular
+%patch -P 12 -p1 -b .socket-segfault
+%patch -P 13 -p1 -b .var-lib-dir
 
 # generate rules for python
 sed -i "s|%python2_path%|`readlink -f %{__python2}`|g" rules.d/*.rules
@@ -106,6 +126,7 @@ make check
 %install
 %make_install
 install -p -m 644 -D init/%{name}-tmpfiles.conf %{buildroot}/%{_tmpfilesdir}/%{name}.conf
+install -p -D -m 0644 %{SOURCE3} %{buildroot}%{_sysusersdir}/%{name}.conf
 mkdir -p %{buildroot}/%{_localstatedir}/lib/%{name}
 mkdir -p %{buildroot}/run/%{name}
 mkdir -p %{buildroot}%{_sysconfdir}/%{name}/trust.d
@@ -165,6 +186,7 @@ find %{buildroot} \( -name '*.la' -o -name '*.a' \) -delete
 
 %pre
 getent passwd %{name} >/dev/null || useradd -r -M -d %{_localstatedir}/lib/%{name} -s /sbin/nologin -c "Application Whitelisting Daemon" %{name}
+
 if [ $1 -eq 2 ]; then
 # detect changed default rules in case of upgrade
 %manage_default_rules
@@ -206,11 +228,11 @@ fi
 %doc README.md
 %{!?_licensedir:%global license %%doc}
 %license COPYING
-%attr(755,root,%{name}) %dir %{_datadir}/%{name}
-%attr(755,root,%{name}) %dir %{_datadir}/%{name}/sample-rules
-%attr(644,root,%{name}) %{_datadir}/%{name}/default-ruleset.known-libs
-%attr(644,root,%{name}) %{_datadir}/%{name}/sample-rules/*
-%attr(644,root,%{name}) %{_datadir}/%{name}/fapolicyd-magic.mgc
+%attr(755,root,root) %dir %{_datadir}/%{name}
+%attr(755,root,root) %dir %{_datadir}/%{name}/sample-rules
+%attr(644,root,root) %{_datadir}/%{name}/default-ruleset.known-libs
+%attr(644,root,root) %{_datadir}/%{name}/sample-rules/*
+%attr(644,root,root) %{_datadir}/%{name}/fapolicyd-magic.mgc
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/trust.d
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/rules.d
@@ -223,6 +245,8 @@ fi
 %ghost %attr(644,root,%{name}) %{_sysconfdir}/%{name}/compiled.rules
 %attr(644,root,root) %{_unitdir}/%{name}.service
 %attr(644,root,root) %{_tmpfilesdir}/%{name}.conf
+%attr(755,root,root) %{_sbindir}/%{name}-rpm-loader
+%attr(644,root,root) %{_sysusersdir}/%{name}.conf
 %attr(755,root,root) %{_sbindir}/%{name}
 %attr(755,root,root) %{_sbindir}/%{name}-cli
 %attr(755,root,root) %{_sbindir}/fagenrules
@@ -254,6 +278,14 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Mon Aug 18 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.3.3-106.1
+- RPMDB crashes with SIGBUS when updating the RPMDB repeatedly
+- Add /var/lib/fapolicyd to tmpfiles
+- File /run/fapolicyd differs from RPM expectations
+- fapolicyd.service badly instructs how to start after nss-user-lookup.target
+- fapolicy rule containing 'pattern=normal' produces error
+- "fapolicyd-cli --file add" crashes when processing sockets
+
 * Wed Jul 19 2023 Radovan Sroka <rsroka@redhat.com> - 1.3.3-100
 RHEL 9.5.0 ERRATUM
 - rebase to fapolicyd-1.3.3 and fapolicyd-selinux-0.7
