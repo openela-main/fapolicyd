@@ -1,0 +1,39 @@
+From 508805c9f47ca22695fd7a265668f99e9258ea27 Mon Sep 17 00:00:00 2001
+From: Radovan Sroka <rsroka@redhat.com>
+Date: Thu, 24 Jul 2025 15:30:06 +0200
+Subject: [PATCH] Skip to add non regular files to trustdb
+
+- it does not make any sense to have them in the trustdb
+- the patch should be fix potential error when reading nonregular files
+
+Signed-off-by: Radovan Sroka <rsroka@redhat.com>
+---
+ src/cli/file-cli.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/cli/file-cli.c b/src/cli/file-cli.c
+index 7deec39c..ae326c14 100644
+--- a/src/cli/file-cli.c
++++ b/src/cli/file-cli.c
+@@ -67,7 +67,7 @@ static int ftw_add_list_append(const char *fpath,
+  */
+ static int add_list_load_path(const char *path)
+ {
+-	int fd = open(path, O_RDONLY);
++	int fd = open(path, O_RDONLY|O_NONBLOCK);
+ 	if (fd < 0) {
+ 		msg(LOG_ERR, "Cannot open %s", path);
+ 		return 1;
+@@ -83,8 +83,11 @@ static int add_list_load_path(const char *path)
+ 
+ 	if (S_ISDIR(sb.st_mode))
+ 		nftw(path, &ftw_add_list_append, FTW_NOPENFD, FTW_FLAGS);
+-	else
++	else if (S_ISREG(sb.st_mode)) {
+ 		list_append(&add_list, strdup(path), NULL);
++	} else {
++		msg(LOG_INFO, "Skipping non regular file: %s", path);
++	}
+ 
+ 	return 0;
+ }

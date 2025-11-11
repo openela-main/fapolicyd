@@ -1,0 +1,27 @@
+From f80e6b1817e32e8b33067c6bdfe838aa136de92f Mon Sep 17 00:00:00 2001
+From: Zdenek Pytela <zpytela@redhat.com>
+Date: Thu, 20 Jun 2024 11:28:07 +0200
+Subject: [PATCH] Add file context entry for /usr/bin/fapolicyd
+
+To comply with the "Unify bin and sbin" Fedora Change [1],
+file equivalency for the /bin, /sbin, and /usr/sbin paths
+are now set in selinux-policy to /usr/bin.
+This requires follow-up changes in DSP modules, too.
+
+[1] https://fedoraproject.org/wiki/Changes/Unify_bin_and_sbin
+---
+ fapolicyd.fc | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fapolicyd-selinux-0.7/fapolicyd.fc b/fapolicyd-selinux-0.7/fapolicyd.fc
+index d081dc8..1b9f649 100644
+--- a/fapolicyd-selinux-0.7/fapolicyd.fc
++++ b/fapolicyd-selinux-0.7/fapolicyd.fc
+@@ -2,6 +2,7 @@
+ 
+ /usr/lib/systemd/system/fapolicyd.*   --	gen_context(system_u:object_r:fapolicyd_unit_file_t,s0)
+ 
++/usr/bin/fapolicyd		--	 gen_context(system_u:object_r:fapolicyd_exec_t,s0)
+ /usr/sbin/fapolicyd		--	 gen_context(system_u:object_r:fapolicyd_exec_t,s0)
+ 
+ /var/lib/fapolicyd(/.*)?		 gen_context(system_u:object_r:fapolicyd_var_lib_t,s0)

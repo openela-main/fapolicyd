@@ -1,0 +1,11 @@
+diff -up ./fapolicyd-selinux-0.7/fapolicyd.te.var_run_dir ./fapolicyd-selinux-0.7/fapolicyd.te
+--- ./fapolicyd-selinux-0.7/fapolicyd.te.var_run_dir	2025-07-20 21:08:05.054395347 +0200
++++ ./fapolicyd-selinux-0.7/fapolicyd.te	2025-07-20 21:08:28.240293532 +0200
+@@ -57,6 +57,7 @@ ifdef(`files_watch_sb_all_mountpoints',`
+ ')
+ 
+ allow fapolicyd_t file_type : lnk_file { getattr read };
++allow fapolicyd_t var_run_t:dir setattr;
+ 
+ manage_files_pattern(fapolicyd_t, fapolicyd_log_t, fapolicyd_log_t)
+ logging_log_filetrans(fapolicyd_t, fapolicyd_log_t, file)

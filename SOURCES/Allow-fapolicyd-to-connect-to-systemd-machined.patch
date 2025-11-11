@@ -1,0 +1,44 @@
+From e3c59ba8ac07adea865455b3a5ef7eb9703b5b5f Mon Sep 17 00:00:00 2001
+From: Petr Lautrbach <lautrbach@redhat.com>
+Date: Wed, 13 Aug 2025 16:37:50 +0200
+Subject: [PATCH] Allow fapolicyd to connect to systemd-machined
+Content-type: text/plain
+
+When systemd-machined.service is running and nsswitch.conf is set with
+somwething like "passwd: files systemd" users are resolved using
+machined socket
+
+Fixes:
+	type=PROCTITLE msg=audit(08/13/2025 15:12:27.178:75968) : proctitle=/usr/sbin/fapolicyd --debug-deny
+	type=PATH msg=audit(08/13/2025 15:12:27.178:75968) : item=0 name=/run/systemd/userdb/io.systemd.Machine inode=2080 dev=00:1b mode=socket,666 ouid=root ogid=root rdev=00:00 obj=system_u:object_r:systemd_userdbd_runtime_t:s0 nametype=NORMAL cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0
+	type=CWD msg=audit(08/13/2025 15:12:27.178:75968) : cwd=/
+	type=SOCKADDR msg=audit(08/13/2025 15:12:27.178:75968) : saddr={ saddr_fam=local path=/run/systemd/userdb/io.systemd.Machine }
+	type=SYSCALL msg=audit(08/13/2025 15:12:27.178:75968) : arch=x86_64 syscall=connect success=no exit=EACCES(Permission denied) a0=0x5 a1=0x7ffdc623d340 a2=0x29 a3=0x0 items=1 ppid=1 pid=1041526 auid=unset uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) ses=unset comm=fapolicyd exe=/usr/bin/fapolicyd subj=system_u:system_r:fapolicyd_t:s0 key=(null)
+	type=AVC msg=audit(08/13/2025 15:12:27.178:75968) : avc:  denied  { connectto } for  pid=1041526 comm=fapolicyd path=/run/systemd/userdb/io.systemd.Machine scontext=system_u:system_r:fapolicyd_t:s0 tcontext=system_u:system_r:systemd_machined_t:s0 tclass=unix_stream_socket permissive=0
+---
+ fapolicyd.te | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fapolicyd-selinux-0.7/fapolicyd.te b/fapolicyd-selinux-0.7/fapolicyd.te
+index efe4a51f27e3..ef437295ec42 100644
+--- a/fapolicyd-selinux-0.7/fapolicyd.te
++++ b/fapolicyd-selinux-0.7/fapolicyd.te
+@@ -103,3 +103,15 @@ ifdef(`systemd_homed_stream_connect',`
+ 		systemd_userdbd_stream_connect(fapolicyd_t)
+ 	')
+ ')
++
++ifdef(`systemd_homed_stream_connect',`
++        optional_policy(`
++                systemd_homed_stream_connect(fapolicyd_t)
++        ')
++')
++
++ifdef(`systemd_machined_stream_connect',`
++       optional_policy(`
++               systemd_machined_stream_connect(fapolicyd_t)
++       ')
++')
+-- 
+2.50.1
+

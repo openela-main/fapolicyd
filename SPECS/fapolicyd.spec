@@ -5,13 +5,14 @@
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
 Version: 1.3.3
-Release: 102%{?dist}
+Release: 107%{?dist}
 License: GPL-3.0-or-later
 URL: http://people.redhat.com/sgrubb/fapolicyd
 Source0: https://people.redhat.com/sgrubb/fapolicyd/%{name}-%{version}.tar.gz
 Source1: https://github.com/linux-application-whitelisting/%{name}-selinux/releases/download/v%{semodule_version}/%{name}-selinux-%{semodule_version}.tar.gz
 # we bundle uthash for rhel9
 Source2: https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz#/uthash-2.3.0.tar.gz
+Source3: fapolicyd.sysusers
 BuildRequires: gcc
 BuildRequires: kernel-headers
 BuildRequires: autoconf automake make gcc libtool
@@ -30,10 +31,24 @@ Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
 
+
 Patch1: selinux.patch
 
 # RHEL-specific patches
-Patch100: fapolicyd-uthash-bundle.patch
+Patch2: fapolicyd-uthash-bundle.patch
+
+Patch3: fapolicyd-rpm-v.patch
+Patch4: fapolicyd-nss-lookup.patch
+Patch5: fapolicyd-normal-pattern.patch
+Patch6: fapolicyd-rpm-loader.patch
+Patch7: fapolicyd-infinite-loop.patch
+Patch8: fapolicyd-data-format.patch
+Patch9: var-run-t-dir-selinux.patch
+Patch10: fapolicyd-skip-nonregular.patch
+Patch11: fapolicyd-socket-segfault.patch
+Patch12: selinux-sbin-bin.patch
+Patch13: Add-var-lib-fapolicyd-to-tmpfiles.patch
+Patch14: Allow-fapolicyd-to-connect-to-systemd-machined.patch
 
 %description
 Fapolicyd (File Access Policy Daemon) implements application whitelisting
@@ -49,7 +64,13 @@ Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
 BuildRequires:  selinux-policy-devel
 BuildArch: noarch
-%{?selinux_requires}
+#FIXME: temporary disabled and expanded manually
+# % {?selinux_requires}
+BuildRequires: pkgconfig(systemd)
+Requires(post): selinux-policy-base >= 42.1
+Requires(post): libselinux-utils
+Requires(post): policycoreutils
+Requires(post): policycoreutils-python-utils
 
 %description    selinux
 The %{name}-selinux package contains selinux policy for the %{name} daemon.
@@ -66,8 +87,22 @@ The %{name}-selinux package contains selinux policy for the %{name} daemon.
 %if 0%{?rhel} != 0
 # uthash
 %setup -q -D -T -a 2
-%patch 100 -p1 -b .uthash
+%patch 2 -p1 -b .uthash
 %endif
+
+
+%patch -P 3 -p1 -b .rpm-v
+%patch -P 4 -p1 -b .nss-lookup
+%patch -P 5 -p1 -b .normal-pattern
+%patch -P 6 -p1 -b .rpm-loader
+%patch -P 7 -p1 -b .infinite-loop
+%patch -P 8 -p1 -b .data-format
+%patch -P 9 -p1 -b .var-run-dir
+%patch -P 10 -p1 -b .skip-nonregular
+%patch -P 11 -p1 -b .socket-segfault
+%patch -P 12 -p1 -b .sbin-bin
+%patch -P 13 -p1 -b .var-lib-dir
+%patch -P 14 -p1 -b .selinux-systemd-machined
 
 # generate rules for python
 sed -i "s/%python2_path%/`readlink -f %{__python2} | sed 's/\//\\\\\//g'`/g" rules.d/*.rules
@@ -107,6 +142,7 @@ make check
 %install
 %make_install
 install -p -m 644 -D init/%{name}-tmpfiles.conf %{buildroot}/%{_tmpfilesdir}/%{name}.conf
+install -p -D -m 0644 %{SOURCE3} %{buildroot}%{_sysusersdir}/%{name}.conf
 mkdir -p %{buildroot}/%{_localstatedir}/lib/%{name}
 mkdir -p %{buildroot}/run/%{name}
 mkdir -p %{buildroot}%{_sysconfdir}/%{name}/trust.d
@@ -163,10 +199,10 @@ fi
 %doc README.md
 %{!?_licensedir:%global license %%doc}
 %license COPYING
-%attr(755,root,%{name}) %dir %{_datadir}/%{name}
-%attr(755,root,%{name}) %dir %{_datadir}/%{name}/sample-rules
-%attr(644,root,%{name}) %{_datadir}/%{name}/sample-rules/*
-%attr(644,root,%{name}) %{_datadir}/%{name}/fapolicyd-magic.mgc
+%attr(755,root,root) %dir %{_datadir}/%{name}
+%attr(755,root,root) %dir %{_datadir}/%{name}/sample-rules
+%attr(644,root,root) %{_datadir}/%{name}/sample-rules/*
+%attr(644,root,root) %{_datadir}/%{name}/fapolicyd-magic.mgc
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/trust.d
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}/rules.d
@@ -179,8 +215,10 @@ fi
 %ghost %attr(644,root,%{name}) %{_sysconfdir}/%{name}/compiled.rules
 %attr(644,root,root) %{_unitdir}/%{name}.service
 %attr(644,root,root) %{_tmpfilesdir}/%{name}.conf
+%attr(644,root,root) %{_sysusersdir}/%{name}.conf
 %attr(755,root,root) %{_sbindir}/%{name}
 %attr(755,root,root) %{_sbindir}/%{name}-cli
+%attr(755,root,root) %{_sbindir}/%{name}-rpm-loader
 %attr(755,root,root) %{_sbindir}/fagenrules
 %attr(644,root,root) %{_mandir}/man8/*
 %attr(644,root,root) %{_mandir}/man5/*
@@ -209,6 +247,28 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Wed Aug 20 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.3.3-107
+- Fix owner:group of /etc/fapolicyd on boot
+
+* Mon Aug 18 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.3.3-106
+- Add /var/lib/fapolicyd to tmpfiles
+Resolves: RHEL-104873
+- Allow fapolicyd to connect to systemd-machined
+Resolves: RHEL-77071
+
+* Wed May 28 2025 Radovan Sroka <rsroka@redhat.com> - 1.3.3-105
+RHEL 10.1 ERRATUM
+- RPMDB crashes with SIGBUS when updating the RPMDB repeatedly
+Resolves: RHEL-94540
+- File /run/fapolicyd differs from RPM expectations
+Resolves: RHEL-94536
+- fapolicyd.service badly instructs how to start after nss-user-lookup.target
+Resolves: RHEL-94538
+- fapolicy rule containing 'pattern=normal' produces error
+Resolves: RHEL-94537
+- "fapolicyd-cli --file add" crashes when processing sockets
+Resolves: RHEL-105425
+
 * Tue Oct 29 2024 Troy Dawson <tdawson@redhat.com> - 1.3.3-102
 - Bump release for October 2024 mass rebuild:
   Resolves: RHEL-64018
