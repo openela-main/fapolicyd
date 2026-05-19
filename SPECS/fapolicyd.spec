@@ -4,8 +4,8 @@
 
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
-Version: 1.4.3
-Release: 3%{?dist}
+Version: 1.4.5
+Release: 1.1%{?dist}
 License: GPL-3.0-or-later
 URL: https://github.com/linux-application-whitelisting/fapolicyd
 Source0: https://github.com/linux-application-whitelisting/fapolicyd/releases/download/v%{version}/fapolicyd-%{version}.tar.gz
@@ -18,18 +18,11 @@ Source11: https://github.com/linux-application-whitelisting/%{name}-selinux/rele
 Source20: https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz#/uthash-2.3.0.tar.gz
 
 # https://github.com/linux-application-whitelisting/fapolicyd
-# $ git format-patch -N v1.4.3
+# $ git format-patch -N v1.4.5
 # https://github.com/linux-application-whitelisting/fapolicyd-selinux
 # $ git format-patch -N --start-number 100 --src-prefix=a/fapolicyd-selinux-1.1/ --dst-prefix=b/fapolicyd-selinux-1.1/ v1.1
 # $ for j in [0-9]*.patch; do printf "Patch: %s\n" $j; done
 # Patch list start
-Patch: 0002-If-less-than-16-chars-were-read-allow-shebang-test-c.patch
-Patch: 0003-Fix-binary-path-of-rpm-loader.patch
-Patch: 0004-Map-file-with-MAP_SHARED-instead-of-MAP_PRIVATE.patch
-Patch: 0005-Fix-segfault-when-interrupting-fapolicyd-startup.patch
-Patch: 0006-Potential-memory-leak-on-early-return-in-file_append.patch
-Patch: 0007-whitespace-fix.patch
-Patch: 0008-Fix-32-bit-ELF-dynamic-section-parsing.patch
 # Patch list end
 
 BuildRequires: gcc
@@ -284,6 +277,14 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Mon Mar 30 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.5-1.1
+- fapolicyd-1.4.5
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.5
+
+* Thu Mar 19 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.4-1
+- fapolicyd-1.4.4
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.4
+
 * Fri Feb 06 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.3-3
 - Fix 32-bit ELF dynamic section parsing
 
