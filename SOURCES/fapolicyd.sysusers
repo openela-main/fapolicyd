@@ -1,1 +1,1 @@
-u! fapolicyd - "Application Whitelisting Daemon" /var/lib/fapolicyd
+u fapolicyd - "Application Whitelisting Daemon" /var/lib/fapolicyd

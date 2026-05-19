@@ -1,24 +1,41 @@
 %global selinuxtype targeted
-%global moduletype contrib
-%define semodule_version 0.7
+%global moduletype distributed
+%define semodule_version 1.1
 
 Summary: Application Whitelisting Daemon
 Name: fapolicyd
-Version: 1.3.3
-Release: 107%{?dist}
+Version: 1.4.5
+Release: 1.2%{?dist}
 License: GPL-3.0-or-later
-URL: http://people.redhat.com/sgrubb/fapolicyd
-Source0: https://people.redhat.com/sgrubb/fapolicyd/%{name}-%{version}.tar.gz
+URL: https://github.com/linux-application-whitelisting/fapolicyd
+Source0: https://github.com/linux-application-whitelisting/fapolicyd/releases/download/v%{version}/fapolicyd-%{version}.tar.gz
 Source1: https://github.com/linux-application-whitelisting/%{name}-selinux/releases/download/v%{semodule_version}/%{name}-selinux-%{semodule_version}.tar.gz
-# we bundle uthash for rhel9
-Source2: https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz#/uthash-2.3.0.tar.gz
+Source2: https://github.com/bachradsusi.gpg
 Source3: fapolicyd.sysusers
+Source10: https://github.com/linux-application-whitelisting/fapolicyd/releases/download/v%{version}/fapolicyd-%{version}.tar.gz.asc
+Source11: https://github.com/linux-application-whitelisting/%{name}-selinux/releases/download/v%{semodule_version}/%{name}-selinux-%{semodule_version}.tar.gz.asc
+# we bundle uthash for eln
+Source20: https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz#/uthash-2.3.0.tar.gz
+
+# https://github.com/linux-application-whitelisting/fapolicyd
+# $ git format-patch -N v1.4.5
+# https://github.com/linux-application-whitelisting/fapolicyd-selinux
+# $ git format-patch -N --start-number 100 --src-prefix=a/fapolicyd-selinux-1.1/ --dst-prefix=b/fapolicyd-selinux-1.1/ v1.1
+# $ for j in [0-9]*.patch; do printf "Patch: %s\n" $j; done
+# Patch list start
+# Patch list end
+
 BuildRequires: gcc
 BuildRequires: kernel-headers
 BuildRequires: autoconf automake make gcc libtool
 BuildRequires: systemd systemd-devel openssl-devel rpm-devel file-devel file
 BuildRequires: libcap-ng-devel libseccomp-devel lmdb-devel
 BuildRequires: python3-devel
+%if 0%{?fedora} || 0%{?rhel} > 10
+BuildRequires: gpgverify
+%else
+BuildRequires: gnupg
+%endif
 
 %if 0%{?rhel} == 0
 BuildRequires: uthash-devel
@@ -30,25 +47,6 @@ Requires(pre): shadow-utils
 Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
-
-
-Patch1: selinux.patch
-
-# RHEL-specific patches
-Patch2: fapolicyd-uthash-bundle.patch
-
-Patch3: fapolicyd-rpm-v.patch
-Patch4: fapolicyd-nss-lookup.patch
-Patch5: fapolicyd-normal-pattern.patch
-Patch6: fapolicyd-rpm-loader.patch
-Patch7: fapolicyd-infinite-loop.patch
-Patch8: fapolicyd-data-format.patch
-Patch9: var-run-t-dir-selinux.patch
-Patch10: fapolicyd-skip-nonregular.patch
-Patch11: fapolicyd-socket-segfault.patch
-Patch12: selinux-sbin-bin.patch
-Patch13: Add-var-lib-fapolicyd-to-tmpfiles.patch
-Patch14: Allow-fapolicyd-to-connect-to-systemd-machined.patch
 
 %description
 Fapolicyd (File Access Policy Daemon) implements application whitelisting
@@ -64,49 +62,27 @@ Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
 BuildRequires:  selinux-policy-devel
 BuildArch: noarch
-#FIXME: temporary disabled and expanded manually
-# % {?selinux_requires}
-BuildRequires: pkgconfig(systemd)
-Requires(post): selinux-policy-base >= 42.1
-Requires(post): libselinux-utils
-Requires(post): policycoreutils
-Requires(post): policycoreutils-python-utils
+%{?selinux_requires}
 
 %description    selinux
 The %{name}-selinux package contains selinux policy for the %{name} daemon.
 
 %prep
+%{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE10}' --data='%{SOURCE0}'
+%{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE11}' --data='%{SOURCE1}'
 
 %setup -q
 
 # selinux
-%setup -q -D -T -a 1
-
-%patch 1 -p1 -b .selinux
+%autosetup -D -T -a 1 -p 1
 
 %if 0%{?rhel} != 0
-# uthash
-%setup -q -D -T -a 2
-%patch 2 -p1 -b .uthash
+%setup -q -D -T -b 20
 %endif
 
-
-%patch -P 3 -p1 -b .rpm-v
-%patch -P 4 -p1 -b .nss-lookup
-%patch -P 5 -p1 -b .normal-pattern
-%patch -P 6 -p1 -b .rpm-loader
-%patch -P 7 -p1 -b .infinite-loop
-%patch -P 8 -p1 -b .data-format
-%patch -P 9 -p1 -b .var-run-dir
-%patch -P 10 -p1 -b .skip-nonregular
-%patch -P 11 -p1 -b .socket-segfault
-%patch -P 12 -p1 -b .sbin-bin
-%patch -P 13 -p1 -b .var-lib-dir
-%patch -P 14 -p1 -b .selinux-systemd-machined
-
 # generate rules for python
-sed -i "s/%python2_path%/`readlink -f %{__python2} | sed 's/\//\\\\\//g'`/g" rules.d/*.rules
-sed -i "s/%python3_path%/`readlink -f %{__python3} | sed 's/\//\\\\\//g'`/g" rules.d/*.rules
+sed -i "s|%python2_path%|`readlink -f %{__python2}`|g" rules.d/*.rules
+sed -i "s|%python3_path%|`readlink -f %{__python3}`|g" rules.d/*.rules
 
 # Detect run time linker directly from bash
 interpret=`readelf -e /usr/bin/bash \
@@ -119,6 +95,14 @@ sed -i "s|%ld_so_path%|`realpath $interpret`|g" rules.d/*.rules
 
 %build
 cp INSTALL INSTALL.tmp
+
+# necessary for updating CFLAGS below
+%set_build_flags
+
+%if 0%{?rhel} != 0
+export CFLAGS="$CFLAGS -I%{_builddir}/uthash-2.3.0/include"
+%endif
+
 ./autogen.sh
 %configure \
     --with-audit \
@@ -147,13 +131,19 @@ mkdir -p %{buildroot}/%{_localstatedir}/lib/%{name}
 mkdir -p %{buildroot}/run/%{name}
 mkdir -p %{buildroot}%{_sysconfdir}/%{name}/trust.d
 mkdir -p %{buildroot}%{_sysconfdir}/%{name}/rules.d
-
+# get list of file names between known-libs and restrictive from sample-rules/README-rules
+cat %{buildroot}/%{_datadir}/%{name}/sample-rules/README-rules \
+  | grep -A 100 'known-libs' \
+  | grep -B 100 'restrictive' \
+  | grep '^[0-9]' > %{buildroot}/%{_datadir}/%{name}/default-ruleset.known-libs
+chmod 644 %{buildroot}/%{_datadir}/%{name}/default-ruleset.known-libs
 
 # selinux
 install -d %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}
 install -m 0644 %{name}-selinux-%{semodule_version}/%{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}
+install -m 0644 %{name}-selinux-%{semodule_version}/%{name}-hardening.cil %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}
 install -d -p %{buildroot}%{_datadir}/selinux/devel/include/%{moduletype}
-install -p -m 644 %{name}-selinux-%{semodule_version}/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/%{moduletype}/ipp-%{name}.if
+install -p -m 644 %{name}-selinux-%{semodule_version}/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/%{moduletype}/%{name}.if
 
 #cleanup
 find %{buildroot} \( -name '*.la' -o -name '*.a' \) -delete
@@ -168,23 +158,15 @@ if [ ! -e %{_sysconfdir}/%{name}/%{name}.rules ] ; then
  # Only if no pre-existing component rules
  if [ "$files" -eq 0 ] ; then
   ## Install the known libs policy
-  cp %{_datadir}/%{name}/sample-rules/10-languages.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/20-dracut.rules %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/21-updaters.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/30-patterns.rules %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/40-bad-elf.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/41-shared-obj.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/42-trusted-elf.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/70-trusted-lang.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/72-shell.rules  %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/90-deny-execute.rules %{_sysconfdir}/%{name}/rules.d/
-  cp %{_datadir}/%{name}/sample-rules/95-allow-open.rules  %{_sysconfdir}/%{name}/rules.d/
+  for rulesfile in `cat %{_datadir}/%{name}/default-ruleset.known-libs`; do
+    cp %{_datadir}/%{name}/sample-rules/$rulesfile  %{_sysconfdir}/%{name}/rules.d/
+  done
   chgrp %{name} %{_sysconfdir}/%{name}/rules.d/*
   if [ -x /usr/sbin/restorecon ] ; then
    # restore correct label
    /usr/sbin/restorecon -F %{_sysconfdir}/%{name}/rules.d/*
   fi
-  fagenrules --load
+  fagenrules >/dev/null
  fi
 fi
 %systemd_post %{name}.service
@@ -201,6 +183,7 @@ fi
 %license COPYING
 %attr(755,root,root) %dir %{_datadir}/%{name}
 %attr(755,root,root) %dir %{_datadir}/%{name}/sample-rules
+%attr(644,root,root) %{_datadir}/%{name}/default-ruleset.known-libs
 %attr(644,root,root) %{_datadir}/%{name}/sample-rules/*
 %attr(644,root,root) %{_datadir}/%{name}/fapolicyd-magic.mgc
 %attr(750,root,%{name}) %dir %{_sysconfdir}/%{name}
@@ -216,9 +199,9 @@ fi
 %attr(644,root,root) %{_unitdir}/%{name}.service
 %attr(644,root,root) %{_tmpfilesdir}/%{name}.conf
 %attr(644,root,root) %{_sysusersdir}/%{name}.conf
+%attr(755,root,root) %{_bindir}/%{name}-rpm-loader
 %attr(755,root,root) %{_sbindir}/%{name}
 %attr(755,root,root) %{_sbindir}/%{name}-cli
-%attr(755,root,root) %{_sbindir}/%{name}-rpm-loader
 %attr(755,root,root) %{_sbindir}/fagenrules
 %attr(644,root,root) %{_mandir}/man8/*
 %attr(644,root,root) %{_mandir}/man5/*
@@ -231,22 +214,62 @@ fi
 
 %files selinux
 %{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-hardening.cil
 %ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}
-%{_datadir}/selinux/devel/include/%{moduletype}/ipp-%{name}.if
+%{_datadir}/selinux/devel
 
 %post selinux
-%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2 %{_datadir}/selinux/packages/%{selinuxtype}/%{name}-hardening.cil
 %selinux_relabel_post -s %{selinuxtype}
 
 %postun selinux
 if [ $1 -eq 0 ]; then
-    %selinux_modules_uninstall -s %{selinuxtype} %{name}
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}-hardening %{name}
 fi
 
 %posttrans selinux
 %selinux_relabel_post -s %{selinuxtype}
 
 %changelog
+* Mon Mar 30 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.5-1.2
+- fapolicyd-1.4.5
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.5
+
+* Thu Mar 19 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.4-1
+- fapolicyd-1.4.4
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.4
+
+* Fri Feb 06 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.3-3
+- Fix 32-bit ELF dynamic section parsing
+
+* Tue Jan 27 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.3-2
+- Fix binary path of rpm-loader
+- Map file with MAP_SHARED instead of MAP_PRIVATE
+- Fix segfault when interrupting fapolicyd startup
+
+* Tue Jan 13 2026 Petr Lautrbach <lautrbach@redhat.com> - 1.4.3-1
+- fapolicyd-1.4.3
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.3
+  https://github.com/linux-application-whitelisting/fapolicyd-selinux/releases/tag/v1.1
+
+* Wed Nov 26 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.4.2-1
+- fapolicyd-1.4.2
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4.2
+
+* Fri Nov 07 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.4.1-2
+- Install SELinux policy hardening module
+
+* Fri Oct 31 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.4.1-1
+- Fix deadlock on reconfigure
+- On reconfigure, update the trust list and reload the rpm filter
+
+* Thu Oct 30 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.4-1
+- fapolicyd-1.4 and fapolicyd-selinux-1.0
+  https://github.com/linux-application-whitelisting/fapolicyd/releases/tag/v1.4
+
+* Thu Oct 16 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.3.7-1
+- fapolicyd-1.3.7 and fapolicyd-selinux-0.9
+
 * Wed Aug 20 2025 Petr Lautrbach <lautrbach@redhat.com> - 1.3.3-107
 - Fix owner:group of /etc/fapolicyd on boot
 
