@@ -1,5 +1,5 @@
-d22ad1a6e3ad32021607dad01b18d1672c62015e5df5883b08d5a776bc5abf33 SOURCES/fapolicyd-1.4.5.tar.gz
-9f98bda9c46304d327789242834701b02155fc27b8edd970c5f533e14149e626 SOURCES/fapolicyd-1.4.5.tar.gz.asc
-3f687227fc9c9f2c342b12fa2c03cd60b6172dda3c6a13884b6b443398939a05 SOURCES/fapolicyd-selinux-1.1.tar.gz
-5e2bd8d41dd32da61087ef2d33875f18f1453019f0c44575bdbaa3b3d7576c3d SOURCES/fapolicyd-selinux-1.1.tar.gz.asc
+4bdc1ecf92af0a4aa29280a80350a41c399416ae5ab3247a6ca8aa70e065624e SOURCES/fapolicyd-selinux-1.2.tar.gz.asc
 e10382ab75518bad8319eb922ad04f907cb20cccb451a3aa980c9d005e661acc SOURCES/uthash-2.3.0.tar.gz
+fc2cdf1acb4d17e2200c0acc8f9fd80344d13d0c672582cfa6c84e895b8d2d75 SOURCES/fapolicyd-2.0.1.tar.gz
+b1e713cc6cbe588a37edf96f838eb6d9ed8e1f348b305516a849118a1165da4c SOURCES/fapolicyd-2.0.1.tar.gz.asc
+ec8d7eb8a95203775f9b940230d858d19a82232e923f16f1260ceccda3066744 SOURCES/fapolicyd-selinux-1.2.tar.gz
